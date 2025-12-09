@@ -1,6 +1,5 @@
 create database customer_behavior;
 
-
 use customer_behavior;
 select * from customer;
 
@@ -61,4 +60,5 @@ where Previous_Purchases > 5 group by Subscription_Status;
 --Q10. What is the revenue contribution of each age group? 
 SELECT age, SUM(Purchase_Amount_USD) AS total_revenue
 FROM customer
+
 GROUP BY age ORDER BY total_revenue desc;
