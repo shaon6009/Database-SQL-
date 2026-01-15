@@ -56,3 +56,19 @@ SELECT * FROM branch_reports;
 CREATE VIEW Active_Members AS SELECT * FROM members 
 WHERE member_id IN (SELECT DISTINCT issued_member_id FROM issued_status WHERE issued_date >= DATEADD(MONTH, -2, GETDATE()));
 SELECT * FROM Active_Members;
+
+-- Task 17: Find Employees with the Most Book Issues Processed
+-- Write a query to find the top 3 employees who have processed the most book issues. Display the employee name, number of books processed, and their branch.
+SELECT  top 3 e.emp_name, b.branch_id, b.branch_address, COUNT(ist.issued_id) AS no_book_issued
+FROM issued_status AS ist JOIN employees AS e ON e.emp_id = ist.issued_emp_id
+JOIN branch AS b ON e.branch_id = b.branch_id GROUP BY e.emp_name, b.branch_id, b.branch_address order by no_book_issued desc;
+
+
+CREATE PROCEDURE IssueBook @p_isbn VARCHAR(50) AS
+BEGIN
+  IF EXISTS (SELECT 1 FROM books WHERE isbn = @p_isbn AND status = 'yes')
+    UPDATE books SET status = 'no' WHERE isbn = @p_isbn;
+  ELSE RAISERROR('Error: Book not available', 16, 1);
+END;
+
+EXEC IssueBook @p_isbn = '978-0-06-025492-6';
