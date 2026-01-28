@@ -103,7 +103,7 @@ SUM(oi.list_price * oi.quantity * (1 - oi.discount)) as total_spent FROM sales.c
 JOIN sales.orders o ON c.customer_id = o.customer_id
 JOIN sales.order_items oi ON o.order_id = oi.order_id GROUP BY c.customer_id, c.first_name, c.last_name
 )
-SELECT TOP 3 * FROM CustomerSpend ORDER BY total_spent DESC;
+SELECT TOP 3 * FROM CustomerSpend order by total_spent DESC;
 
 -- List each store and the count of orders grouped by status (1 = Pending, 4 = Completed).
 select store_id,
@@ -117,3 +117,4 @@ FROM (SELECT b.brand_name, p.product_name, p.list_price,
 ROW_NUMBER() OVER(PARTITION BY b.brand_id ORDER BY p.list_price DESC) as rn
 FROM production.brands b JOIN production.products p ON b.brand_id = p.brand_id
 ) t WHERE rn = 1;
+
