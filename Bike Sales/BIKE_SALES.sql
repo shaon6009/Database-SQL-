@@ -28,8 +28,6 @@ select first_name from sales.staffs where active= 1;
 
 
 
-
-
 -- List every product name alongside its associated brand name.
 select p.product_name , b.brand_name from production.products as p 
 join production.brands as b on p.brand_id= b.brand_id;
@@ -117,5 +115,3 @@ FROM (SELECT b.brand_name, p.product_name, p.list_price,
 ROW_NUMBER() OVER(PARTITION BY b.brand_id ORDER BY p.list_price DESC) as rn
 FROM production.brands b JOIN production.products p ON b.brand_id = p.brand_id
 ) t WHERE rn = 1;
-
-
