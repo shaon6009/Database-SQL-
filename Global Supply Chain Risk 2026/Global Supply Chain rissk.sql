@@ -23,3 +23,28 @@ OVER(PARTITION BY origin_port, destination_port ORDER BY date ROWS BETWEEN 30 PR
 AS rolling_30d_disruption_rate FROM supply_risk)
 SELECT * FROM daily 
 WHERE rolling_30d_disruption_rate IS NOT NULL;
+
+--Running Total of At-Risk Weight per Month
+select *, sum(weight_MT) over(partition by Year(date), month(date) order by date) as monthly_rnning_at_risk_weigt
+from supply_risk where Geopolitical_Risk_Score > 7;
+
+--Lead Time Anomaly Detection (IQR Method)
+with stats as(select *, 
+PERCENTILE_CONT(0.25) within group(order by lead_time_days) over(partition by origin_port, destination_port, transport_mode) as q1,
+percentile_cont(0.75) within group(order by lead_time_days) over(partition by origin_port, destination_port, transport_mode) as q3
+from supply_risk)
+select *, case when lead_time_days < q1-1.5*(q3-q1) or lead_time_days > q3+1.5*(q3-q1)
+then 1 else 0 end as IS_LEAD_TIME_OUTLAIR from stats;
+
+-- Rank Shipments by Combined Risk (Fuel + Geopolitical)
+select *, rank() over(partition by product_category order by fuel_price_index* geopolitical_risk_score) as Combine_risk_rank 
+from supply_risk;
+
+--First Disrupted Shipment per Month per Route
+with ranked as ( select *, ROW_NUMBER() over(partition by origin_port, destination_port, year(date), mont(date) order by date) as rn
+from supply_risk where Disruption_Occurred=1)
+select * from ranked where rn=1;
+
+--  Month-over-Month Disruption % Change
+
+
