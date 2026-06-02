@@ -1,4 +1,5 @@
 -- create database GSCRA;
+
 use gscra;
 
 select * from supply_risk;
@@ -45,5 +46,13 @@ from supply_risk where Disruption_Occurred=1)
 select * from ranked where rn=1;
 
 --  Month-over-Month Disruption % Change
-
+WITH monthly AS (
+SELECT Origin_Port, Destination_Port, YEAR(Date) AS yr, MONTH(Date) AS mo, AVG(Disruption_Occurred * 1.0) AS disruption_rate
+FROM supply_risk GROUP BY Origin_Port, Destination_Port, YEAR(Date), MONTH(Date)
+)
+SELECT *, 
+LAG(disruption_rate) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY yr, mo) AS prev_rate,
+((disruption_rate - LAG(disruption_rate) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY yr, mo)) / 
+NULLIF(LAG(disruption_rate) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY yr, mo), 0)) * 100 AS pct_change
+FROM monthly;
 
