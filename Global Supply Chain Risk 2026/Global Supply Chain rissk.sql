@@ -56,3 +56,16 @@ LAG(disruption_rate) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY y
 NULLIF(LAG(disruption_rate) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY yr, mo), 0)) * 100 AS pct_change
 FROM monthly;
 
+--Consecutive Disruptions (Islands)
+with grp as (
+    select *, 
+           row_number() over(partition by origin_port, destination_port order by date) - 
+           row_number() over(partition by origin_port, destination_port, disruption_occurred order by date) as grp_id 
+    from supply_risk
+)
+select origin_port, destination_port, count(*) as streak_length 
+from grp
+where disruption_occurred = 1 
+group by origin_port, destination_port, grp_id
+order by streak_length desc;
+
