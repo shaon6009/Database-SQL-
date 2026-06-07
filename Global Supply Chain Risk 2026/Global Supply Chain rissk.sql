@@ -69,3 +69,17 @@ where disruption_occurred = 1
 group by origin_port, destination_port, grp_id
 order by streak_length desc;
 
+-- Pivot Table: Disruption Count by Weather Condition
+select transport_mode, 
+ISNULL([Clear], 0) AS Clear, ISNULL([Storm], 0) AS Storm,
+ISNULL([Rain], 0) AS Rain, ISNULL([Fog], 0) AS Fog,
+ISNULL([Hurricane], 0) AS Hurricane
+from(select transport_mode, weather_condition, CAST(disruption_occurred AS INT) as disruption_occurred from supply_risk) src
+PIVOT (SUM(disruption_occurred) FOR weather_condition IN ([Clear],[Storm],[Rain],[Fog],[Hurricane])) pvt;
+
+--Top 3 Most Reliable Carriers per Lane
+with ranked as(select * , ROW_NUMBER() over(partition by origin_port, destination_port
+order by carrier_reliability_score desc) as rn from supply_risk) select * from ranked where rn<=3;
+
+
+
