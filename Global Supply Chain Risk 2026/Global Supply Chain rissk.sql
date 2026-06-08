@@ -81,5 +81,46 @@ PIVOT (SUM(disruption_occurred) FOR weather_condition IN ([Clear],[Storm],[Rain]
 with ranked as(select * , ROW_NUMBER() over(partition by origin_port, destination_port
 order by carrier_reliability_score desc) as rn from supply_risk) select * from ranked where rn<=3;
 
+--  Running Median of Lead Time
+with ordered_shipments as (select shipment_id, transport_mode, date, lead_time_days,
+row_number() over(partition by transport_mode order by date) as row_num from supply_risk
+)
+select a.shipment_id, a.date, a.lead_time_days,(select max(median_val) from (
+select percentile_cont(0.5) within group (order by b.lead_time_days) over() as median_val
+from ordered_shipments b
+where b.transport_mode = a.transport_mode and b.row_num <= a.row_num) t) as Running_median_lead_time
+from ordered_shipments a
+order by a.transport_mode, a.date;
 
+--  Cumulative Distance per Carrier (Reset on Disruption)
+WITH pre_summary AS (SELECT *, 
+SUM(CAST(Disruption_Occurred AS INT)) OVER (ORDER BY Date ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS disruption_group
+FROM supply_risk
+)
+SELECT *, SUM(Distance_km) OVER (
+PARTITION BY Carrier_Reliability_Score, disruption_group ORDER BY Date
+ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS cumulative_distance
+FROM pre_summary;
 
+-- YOY Disruption Increase by Month
+with yoy as(select year(date) as yr, month(date) as mo, avg(cast(disruption_occurred as float)) as disruption_rate
+from supply_risk group by year(date), month(date))
+select yr, mo, disruption_rate, lag(disruption_rate,12) over(order by yr,mo) as prev_year_rate,
+disruption_rate - lag(disruption_rate,12) over (order by yr,mo) as yoy_change from yoy;
+
+-- Weighted Risk Score per Shipment
+SELECT *,( (Fuel_Price_Index - MIN(Fuel_Price_Index) OVER ()) * 1.0 / 
+NULLIF(MAX(Fuel_Price_Index) OVER () - MIN(Fuel_Price_Index) OVER (), 0) * 0.25
++ (Geopolitical_Risk_Score - MIN(Geopolitical_Risk_Score) OVER ()) * 1.0 / 
+NULLIF(MAX(Geopolitical_Risk_Score) OVER () - MIN(Geopolitical_Risk_Score) OVER (), 0) * 0.35
++ (1.0 - Carrier_Reliability_Score) * 0.2
++ (CASE WHEN Weather_Condition = 'Hurricane' THEN 1.0 ELSE 0.0 END) * 0.1
++ (Lead_Time_Days - MIN(Lead_Time_Days) OVER ()) * 1.0 / 
+NULLIF(MAX(Lead_Time_Days) OVER () - MIN(Lead_Time_Days) OVER (), 0) * 0.1) AS weighted_risk_score
+FROM supply_risk;
+
+-- Recursive CTE: Find Indirect Routes
+with routes as(select origin_port, destination_port from supply_risk
+union
+SELECT a.Origin_Port, b.Destination_Port FROM supply_risk a JOIN supply_risk b ON a.Destination_Port = b.Origin_Port) 
+select * from routes;
