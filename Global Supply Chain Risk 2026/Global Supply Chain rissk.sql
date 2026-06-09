@@ -124,3 +124,50 @@ with routes as(select origin_port, destination_port from supply_risk
 union
 SELECT a.Origin_Port, b.Destination_Port FROM supply_risk a JOIN supply_risk b ON a.Destination_Port = b.Origin_Port) 
 select * from routes;
+
+-- Fill Missing Dates per Lane
+WITH dates AS (SELECT Origin_Port, Destination_Port, Date,
+LEAD(Date) OVER (PARTITION BY Origin_Port, Destination_Port ORDER BY Date) AS next_date FROM supply_risk
+)
+SELECT Origin_Port, Destination_Port, DATEADD(day, t.n, dates.Date) AS missing_date FROM dates
+CROSS APPLY (SELECT ROW_NUMBER() OVER (ORDER BY (SELECT NULL)) AS n 
+FROM (VALUES (0),(0),(0),(0),(0),(0),(0),(0),(0),(0)) a(n) 
+CROSS JOIN (VALUES (0),(0),(0),(0),(0),(0),(0),(0),(0),(0)) b(n)) t
+WHERE next_date IS NOT NULL AND t.n < DATEDIFF(day, dates.Date, dates.next_date);
+
+-- Mode of Transport per Product Category
+with freq as(select product_category, Transport_Mode, row_number() over(partition by product_category
+order by count(*) desc) as rn from supply_risk group by Product_Category, Transport_Mode) 
+select * from freq where rn=1;
+
+-- Shipments with Above-Average Lead Time for that Week
+WITH weekly_averages AS (
+SELECT *, AVG(Lead_Time_Days) OVER (PARTITION BY Origin_Port, Destination_Port, DATEPART(week, Date)) 
+AS weekly_avg_lead_time FROM supply_risk)
+SELECT *, CASE WHEN Lead_Time_Days > weekly_avg_lead_time THEN 1 ELSE 0 END AS above_weekly_avg
+FROM weekly_averages;
+
+--  Self-Join: Paired Disruptions on Same Day
+SELECT a.Shipment_ID, b.Shipment_ID, a.Date, a.Origin_Port FROM supply_risk a
+JOIN supply_risk b ON a.Date = b.Date AND a.Origin_Port = b.Origin_Port AND a.Shipment_ID < b.Shipment_ID
+WHERE a.Disruption_Occurred = 1 AND b.Disruption_Occurred = 1;
+
+--  Dynamic Pivot: Monthly Disruption Count by Product
+DECLARE @cols AS NVARCHAR(MAX), @query AS NVARCHAR(MAX);
+SELECT @cols = STRING_AGG(QUOTENAME(ym), ',') FROM (SELECT DISTINCT FORMAT(Date, 'yyyy-MM') AS ym FROM Supply_risk) t;
+
+SET @query = 'SELECT Product_Category, ' + @cols + ' 
+FROM (SELECT Product_Category, FORMAT(Date, ''yyyy-MM'') AS ym, 
+CAST(Disruption_Occurred AS INT) AS Disruption_Occurred FROM Supply_risk) src 
+PIVOT (SUM(Disruption_Occurred) FOR ym IN (' + @cols + ')) pvt';
+EXEC sp_executesql @query;
+
+--  Lead Time vs Fuel Price Correlation per Mode
+-- select transport_mode, corr(lead_time_days, fuel_price_index) as lead_fuel_corelation from supply_risk group by Transport_Mode;
+
+SELECT Transport_Mode,
+(COUNT(*) * SUM(Lead_Time_Days * Fuel_Price_Index) - SUM(Lead_Time_Days) * SUM(Fuel_Price_Index)) /
+(SQRT(COUNT(*) * SUM(Lead_Time_Days * Lead_Time_Days) - SQUARE(SUM(Lead_Time_Days))) *
+SQRT(COUNT(*) * SUM(Fuel_Price_Index * Fuel_Price_Index) - SQUARE(SUM(Fuel_Price_Index)))) AS lead_fuel_correlation
+FROM supply_risk
+GROUP BY Transport_Mode;
