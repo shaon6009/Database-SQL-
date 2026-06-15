@@ -171,3 +171,56 @@ SELECT Transport_Mode,
 SQRT(COUNT(*) * SUM(Fuel_Price_Index * Fuel_Price_Index) - SQUARE(SUM(Fuel_Price_Index)))) AS lead_fuel_correlation
 FROM supply_risk
 GROUP BY Transport_Mode;
+
+--  High-Frequency Routes (Top 10% by Shipment Count)
+WITH freq AS (
+SELECT Origin_Port, Destination_Port, COUNT(*) AS cnt, PERCENTILE_CONT(0.9) WITHIN GROUP (ORDER BY COUNT(*)) OVER () AS p90
+    FROM supply_risk GROUP BY Origin_Port, Destination_Port)
+SELECT * FROM freq WHERE cnt > p90;
+
+--Month-End Lead Time Snapshot
+WITH ranked AS (
+    SELECT *, ROW_NUMBER() OVER (PARTITION BY Origin_Port, Destination_Port, YEAR(Date), 
+	MONTH(Date) ORDER BY Date DESC) AS rn FROM supply_risk
+)
+SELECT * FROM ranked WHERE rn = 1;
+
+-- Weight Moving Average by Product (7-day)
+SELECT *, AVG(Weight_MT) OVER (PARTITION BY Product_Category
+ORDER BY Date ROWS BETWEEN 6 PRECEDING AND CURRENT ROW) AS ma7_weight
+FROM supply_risk;
+
+-- Top 5 Most Unreliable Routes (Highest Disruption %)
+SELECT Origin_Port, Destination_Port, AVG(Disruption_Occurred * 1.0) AS disruption_rate,
+COUNT(*) AS total_shipments FROM supply_risk
+GROUP BY Origin_Port, Destination_Port HAVING COUNT(*) >= 10
+ORDER BY disruption_rate DESC
+OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY;
+
+-- Lead Time Difference from Previous Shipment per Lane
+SELECT date,destination_port, origin_port, disruption_occurred, Lead_Time_Days - LAG(Lead_Time_Days) OVER (PARTITION BY Origin_Port, Destination_Port
+ORDER BY Date) AS lead_time_change__days__ FROM supply_risk;
+
+-- Compare Actual Lead Time vs Route Average
+SELECT date,destination_port, origin_port, disruption_occurred, Lead_Time_Days, 
+AVG(Lead_Time_Days) OVER (PARTITION BY Origin_Port, Destination_Port) AS route_avg_lt,
+Lead_Time_Days - AVG(Lead_Time_Days) OVER (PARTITION BY Origin_Port, Destination_Port) AS deviation
+FROM supply_risk;
+
+-- Probability of Disruption Given Weather + High Fuel
+with stats as (
+select *,count(case when weather_condition='hurricane' and fuel_price_index>3 then 1 end) over() as both_high
+from supply_risk
+)
+select distinct count(case when disruption_occurred=0 and weather_condition='storm' and fuel_price_index>3 then 1 end) over()*1.0/
+nullif(both_high,0) as prob_disruption_given_both
+from stats;
+
+--  Earliest and Latest Disruption per Week per Lane
+WITH weekly AS (SELECT Origin_Port, Destination_Port,
+DATEPART(year, Date) AS yr, DATEPART(week, Date) AS wk,
+MIN(CASE WHEN Disruption_Occurred = 1 THEN Date END) AS first_disruption,
+MAX(CASE WHEN Disruption_Occurred = 1 THEN Date END) AS last_disruption
+FROM supply_risk
+GROUP BY Origin_Port, Destination_Port, DATEPART(year, Date), DATEPART(week, Date))
+SELECT * FROM weekly WHERE first_disruption IS NOT NULL;
