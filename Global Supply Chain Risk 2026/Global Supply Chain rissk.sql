@@ -4,7 +4,6 @@ use gscra;
 
 select * from supply_risk;
 
-
 select distinct Weather_Condition from supply_risk;
 select distinct transport_mode from supply_risk;
 select distinct origin_port from supply_risk;
