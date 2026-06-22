@@ -1,5 +1,4 @@
 -- create database GSCRA;
-
 use gscra;
 
 select * from supply_risk;
